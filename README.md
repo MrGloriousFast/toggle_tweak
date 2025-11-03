@@ -17,7 +17,7 @@ it will generate two files in the folder tweak_output.
 
 one is called lua_json.txt
 it will look like this:
-```json
+```lua
 {
   armfig = { maxThisUnit = 0 },
   armkam = { maxThisUnit = 0 },
