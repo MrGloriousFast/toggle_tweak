@@ -170,7 +170,7 @@ def main():
                     tag=main_window_tag,  # assign tag so we can resize
                     no_title_bar=True,
                     pos=(0, 0),
-                    autosize=True,      # we control size manually
+                    autosize=False,      # we control size manually
                     width=width,
                     height=height,
                     no_move=True):
