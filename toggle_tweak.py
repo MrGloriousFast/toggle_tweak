@@ -67,7 +67,7 @@ def load_texture(path):
     return width, height, data
 
 
-def create_image_grid(folder, columns=8, thumb_size=64):
+def create_image_grid(folder, columns=9, thumb_size=64):
     # --- Create themes (enabled/green, disabled/red) ---
     with dpg.theme() as enabled_theme:
         with dpg.theme_component(dpg.mvAll):
