@@ -170,9 +170,10 @@ def main():
                     tag=main_window_tag,  # assign tag so we can resize
                     no_title_bar=True,
                     pos=(0, 0),
-                    autosize=False,      # we control size manually
+                    autosize=True,      # we control size manually
                     width=width,
-                    height=height):
+                    height=height,
+                    no_move=True):
 
         # Scrollable child window for image grid
         with dpg.child_window(width=-1, height=-1, autosize_x=True, autosize_y=True, border=False):
