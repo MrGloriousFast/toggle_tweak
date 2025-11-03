@@ -149,12 +149,13 @@ def main():
         return
 
     dpg.create_context()
-    dpg.create_viewport(title="Image Grid", width=1900, height=1040)
-    dpg.setup_dearpygui()
+    dpg.create_viewport(title="Disable Units", width=1920//2, height=1080//2)
 
-    with dpg.window(label="Image Grid", width=1900, height=1040):
+    # Use a single top-level window as the main container
+    with dpg.window(label="Disable Units", no_title_bar=True, width=1920//2, height=1080//2):
         create_image_grid(folder)
 
+    dpg.setup_dearpygui()
     dpg.show_viewport()
     print("[INFO] GUI running — close the window to exit")
     dpg.start_dearpygui()
