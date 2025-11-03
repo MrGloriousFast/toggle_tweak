@@ -12,6 +12,10 @@ FOLDER_OUTPUT = "tweak_output"
 # value = (state, enabled_theme, disabled_theme)
 button_states = {}
 
+# Global tag for main window
+main_window_tag = "main_window"
+
+
 def save_output():
   folder_out = os.path.join(os.path.dirname(__file__), FOLDER_OUTPUT)
   os.makedirs(folder_out, exist_ok=True)
@@ -85,60 +89,68 @@ def create_image_grid(folder, columns=8, thumb_size=64):
                 full_path = os.path.join(root, f)
                 rel_path = os.path.relpath(full_path, folder)
                 files.append((rel_path, full_path))
-    files.sort(key=lambda x: x[0])  # sort by relative path
+    files.sort(key=lambda x: x[0])
 
     with dpg.texture_registry(show=False):
         for rel_path, full_path in files:
             try:
                 width, height, data = load_texture(full_path)
-                tex_tag = "tex_" + rel_path.replace(os.sep, "_")  # unique tag
+                tex_tag = "tex_" + rel_path.replace(os.sep, "_")
                 dpg.add_static_texture(width, height, data, tag=tex_tag)
-                print("[OK] Loaded texture:", rel_path)
             except Exception as e:
                 print("[FAIL] Could not load texture:", rel_path, "-", e)
 
-    # --- Top action buttons ---
+    # --- Top buttons stay fixed ---
     with dpg.group(horizontal=True):
         dpg.add_button(label="generate LUA", callback=save_output)
-        # Add more top buttons here if needed
 
-    dpg.add_spacing(count=2)
+    dpg.add_spacing(count=1)
 
-    # --- Group buttons by folder structure ---
-    folder_dict = {}
-    for rel_path, full_path in files:
-        folder_name = os.path.dirname(rel_path)
-        folder_dict.setdefault(folder_name, []).append((rel_path, full_path))
+    # --- Scrollable area for image grid ---
+    with dpg.child_window(width=-1, height=-1, autosize_x=True, autosize_y=True, border=False, horizontal_scrollbar=True):
+        # Group buttons by folder
+        folder_dict = {}
+        for rel_path, full_path in files:
+            folder_name = os.path.dirname(rel_path)
+            folder_dict.setdefault(folder_name, []).append((rel_path, full_path))
 
-    for folder_name in sorted(folder_dict.keys()):
-      display_name = folder_name if folder_name != '.' else "Root"
-      indent = "    " * (folder_name.count(os.sep))  # optional indent
-      with dpg.tree_node(label=indent + display_name, default_open=True):
-          files_in_folder = sorted(folder_dict[folder_name])
-          # create rows of buttons
-          for i in range(0, len(files_in_folder), columns):
-              with dpg.group(horizontal=True):  # one horizontal row
-                  for j in range(columns):
-                      if i + j >= len(files_in_folder):
-                          break
-                      rel_path, full_path = files_in_folder[i + j]
-                      tex_tag = "tex_" + rel_path.replace(os.sep, "_")
-                      key = os.path.splitext(os.path.basename(rel_path))[0]
+        for folder_name in sorted(folder_dict.keys()):
+            display_name = folder_name if folder_name != '.' else "Root"
+            indent = "    " * (folder_name.count(os.sep))
+            with dpg.tree_node(label=indent + display_name, default_open=True):
+                files_in_folder = sorted(folder_dict[folder_name])
+                # create rows of buttons
+                for i in range(0, len(files_in_folder), columns):
+                    with dpg.group(horizontal=True):  # row of buttons
+                        for j in range(columns):
+                            if i + j >= len(files_in_folder):
+                                break
+                            rel_path, full_path = files_in_folder[i + j]
+                            tex_tag = "tex_" + rel_path.replace(os.sep, "_")
+                            key = os.path.splitext(os.path.basename(rel_path))[0]
 
-                      button_tag = dpg.add_image_button(
-                          tex_tag,
-                          width=thumb_size,
-                          height=thumb_size,
-                          callback=on_image_click,
-                          user_data=(key, True, enabled_theme, disabled_theme)
-                      )
-                      dpg.bind_item_theme(button_tag, enabled_theme)
+                            button_tag = dpg.add_image_button(
+                                tex_tag,
+                                width=thumb_size,
+                                height=thumb_size,
+                                callback=on_image_click,
+                                user_data=(key, True, enabled_theme, disabled_theme)
+                            )
+                            dpg.bind_item_theme(button_tag, enabled_theme)
 
-                      with dpg.tooltip(parent=button_tag):
-                          dpg.add_text(rel_path)
+                            with dpg.tooltip(parent=button_tag):
+                                dpg.add_text(rel_path)
 
-                      button_states[key] = (True, enabled_theme, disabled_theme)
-                      print("[UI] Added button with toggle for:", rel_path)
+                            button_states[key] = (True, enabled_theme, disabled_theme)
+                    print("[UI] Added button with toggle for:", rel_path)
+
+def resize_main_window(sender, app_data):
+    new_width = dpg.get_viewport_width()
+    new_height = dpg.get_viewport_height()
+    # Resize the main window to fill the viewport
+    dpg.configure_item(main_window_tag, width=new_width, height=new_height)
+
+
 
 
 
@@ -149,12 +161,24 @@ def main():
         return
 
     dpg.create_context()
-    dpg.create_viewport(title="Disable Units", width=1920//2, height=1080//2)
 
-    # Use a single top-level window as the main container
-    with dpg.window(label="Disable Units", no_title_bar=True, width=1920//2, height=1080//2):
-        create_image_grid(folder)
+    width, height = 1920 // 2, 1080 // 2
+    dpg.create_viewport(title="Disable Units", width=width, height=height)
 
+    # Single top-level window filling viewport
+    with dpg.window(label="Disable Units",
+                    tag=main_window_tag,  # assign tag so we can resize
+                    no_title_bar=True,
+                    pos=(0, 0),
+                    autosize=False,      # we control size manually
+                    width=width,
+                    height=height):
+
+        # Scrollable child window for image grid
+        with dpg.child_window(width=-1, height=-1, autosize_x=True, autosize_y=True, border=False):
+            create_image_grid(folder)  # your existing function
+
+    dpg.set_viewport_resize_callback(resize_main_window)  # set callback AFTER window exists
     dpg.setup_dearpygui()
     dpg.show_viewport()
     print("[INFO] GUI running — close the window to exit")
