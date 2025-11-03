@@ -16,35 +16,120 @@ button_states = {}
 main_window_tag = "main_window"
 
 
-def save_output():
-  folder_out = os.path.join(os.path.dirname(__file__), FOLDER_OUTPUT)
-  os.makedirs(folder_out, exist_ok=True)
+def base64_encode(data: str) -> str:
+    """
+    Encode a string to base64 and remove padding ('=').
+    will add the bset command
+    Returns a string.
+    """
+    encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
+    encoded = "!bset tweakunits " + encoded
 
-  list_file_path = os.path.join(folder_out, "lua_json.txt")
-  encoded_file_path = os.path.join(folder_out, "paste_command.txt")
+    return encoded.rstrip("=")  # remove any '=' padding
 
-  # Write lua_json
-  with open(list_file_path, "w") as f:
-    f.write("{\n")
+
+
+def base64_decode(data: str) -> str:
+    """
+    Decode a base64 string, adding '=' padding if needed.
+    Returns a string.
+    """
+    #remove twek command
+    data = data.replace("!bset tweakunits ","")
+
+    # Add padding if missing
+    padding = 4 - (len(data) % 4)
+    if padding and padding != 4:
+        data += "=" * padding
+    decoded = base64.b64decode(data).decode("utf-8")
+    return decoded
+
+def export(filename: str = None):
+    """
+    Export Lua file and encoded base64 file.
+    If filename is provided, files will be <filename>.lua and <filename>.txt
+    Otherwise defaults to output.lua and output.txt
+    """
+    folder_out = os.path.join(os.path.dirname(__file__), FOLDER_OUTPUT)
+    os.makedirs(folder_out, exist_ok=True)
+
+    base_name = filename if filename else "output"
+    lua_file_path = os.path.join(folder_out, f"{base_name}.lua")
+    encoded_file_path = os.path.join(folder_out, f"{base_name}.txt")
+
+    # --- Build Lua string in memory ---
+    lua_content = "{\n"
     for key, (state, _, _) in button_states.items():
-      if not state:  # only write if toggled red
-        f.write("  " + key + " = { maxThisUnit = 0 },\n")
-    f.write("}\n")
-  print("[INFO] Wrote " + list_file_path)
+        if not state:  # only include toggled red
+            lua_content += "  " + key + " = { maxThisUnit = 0 },\n"
+    lua_content += "}\n"
 
-  # Read list.txt and encode to base64
-  with open(list_file_path, "rb") as f:
-    encoded_data = base64.b64encode(f.read()).decode("ascii")
+    # Save Lua string to file
+    with open(lua_file_path, "w") as f:
+        f.write(lua_content)
+    print("[INFO] Wrote " + lua_file_path)
 
-  # Remove padding (=) and prepend command
-    encoded_data = "!bset tweakunits " + encoded_data.replace("=", "")
+    # Read list.txt and encode to base64 command
+    encoded_data = base64_encode(lua_content)
+
+    # Write encoded base64 string to paste_command.txt
+    with open(encoded_file_path, "w") as f:
+      f.write(encoded_data + "\n")
+    print("[INFO] Wrote " + encoded_file_path)
 
 
-  # Write encoded base64 string to paste_command.txt
-  with open(encoded_file_path, "w") as f:
-    f.write(encoded_data + "\n")
-  print("[INFO] Wrote " + encoded_file_path)
 
+def import_tweak(lua_file: str):
+    """
+    Import a Lua file with unit restrictions and update button_states.
+    lua_file: path to the .lua file
+    """
+    if not os.path.isfile(lua_file):
+        print(f"[ERROR] Lua file '{lua_file}' not found.")
+        return
+
+    # Read Lua content
+    with open(lua_file, "r") as f:
+        lines = f.readlines()
+
+    # Extract keys (everything before '=' on lines that contain maxThisUnit = 0)
+    keys_disabled = set()
+    for line in lines:
+        line = line.strip()
+        if line.endswith(","):
+            line = line[:-1].strip()
+        if "= { maxThisUnit = 0 }" in line:
+            key = line.split("=", 1)[0].strip()
+            keys_disabled.add(key)
+
+    # Update button_states
+    for key in button_states:
+        state, enabled_theme, disabled_theme = button_states[key]
+        if key in keys_disabled:
+            button_states[key] = (False, enabled_theme, disabled_theme)  # red
+        else:
+            button_states[key] = (True, enabled_theme, disabled_theme)   # green
+
+    # --- Cache button tags once ---
+    if not hasattr(import_tweak, "_button_cache"):
+        import_tweak._button_cache = {}
+        all_items = dpg.get_all_items()
+        for item in all_items:
+            try:
+                ud = dpg.get_item_user_data(item)
+                if isinstance(ud, tuple) and len(ud) >= 1:
+                    key = ud[0]
+                    import_tweak._button_cache[key] = item
+            except Exception:
+                continue
+
+    # --- Update UI using cached tags ---
+    for key, (state, enabled_theme, disabled_theme) in button_states.items():
+        button_tag = import_tweak._button_cache.get(key)
+        if button_tag:
+            dpg.bind_item_theme(button_tag, enabled_theme if state else disabled_theme)
+            dpg.set_item_user_data(button_tag, (key, state, enabled_theme, disabled_theme))
+    print(f"[INFO] Imported Lua file '{lua_file}' and updated button states.")
 
 def on_image_click(sender, app_data, user_data):
     # user_data = (key, state, enabled_theme, disabled_theme)
@@ -102,7 +187,23 @@ def create_image_grid(folder, columns=9, thumb_size=64):
 
     # --- Top buttons stay fixed ---
     with dpg.group(horizontal=True):
-        dpg.add_button(label="generate LUA", callback=save_output)
+        # Input field for filename
+        filename_input = dpg.add_input_text(default_value="output", width=200)
+
+        # Button calls a lambda that reads the input text and passes it to export()
+        dpg.add_button(
+            label="Generate LUA",
+            callback=lambda: export(dpg.get_value(filename_input))
+        )
+
+        # Load LUA button (just shows the dialog)
+        def load_lua_callback():
+            # Prevent re-opening if already visible
+            if not dpg.is_item_shown("load_lua_dialog"):
+                dpg.show_item("load_lua_dialog")
+
+        dpg.add_button(label="Load LUA", callback=load_lua_callback)
+
 
     dpg.add_spacing(count=1)
 
@@ -161,6 +262,21 @@ def main():
         return
 
     dpg.create_context()
+
+    with dpg.file_dialog(
+        directory_selector=False,
+        show=False,
+        callback=lambda s, a: import_tweak(a["file_path_name"]),
+        tag="load_lua_dialog",
+        width=500,
+        height=500,
+        modal=True,
+        default_path=os.path.join(os.path.dirname(__file__), FOLDER_OUTPUT)
+    ):
+        dpg.add_file_extension("Lua files (*.lua){.lua}", color=(150, 150, 255, 255))
+        dpg.add_file_extension(".*")
+
+
 
     width, height = 1920 // 2, 1080 // 2
     dpg.create_viewport(title="Disable Units", width=width, height=height)
